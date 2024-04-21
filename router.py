@@ -1,6 +1,7 @@
 import socket
 import threading
 from datagramaInfo import Datagrama
+from datagramaInfo import Canal
 import time
 
 class Roteador:
@@ -14,9 +15,7 @@ class Roteador:
         self.neighborsList = []
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # socket do roteador
         self.socket.bind(("127.0.0.1", port))
-
-    def toString(self, data):
-        return f"ID: {data.id} | Porta: {data.port} | Tabela: {data.routing_table} | Destino: {data.destinationIp} | Porta: {data.destinationPort}"
+        self.canal = Canal()
 
     def receiver(self):
 
@@ -25,10 +24,14 @@ class Roteador:
             dataBytes, address = self.socket.recvfrom(1024)
             data, address = Datagrama.extractMessage(dataBytes, address)
             
+            '''Mostra no console as mensagens recebidas para o roteador 1'''
             if(data.destinationPort == 10001):
                 print(f"\033[93mMensagem recebida {data.toString()} do roteador ({address[0]}, {address[1]})\033[0m")
                 
+            '''Atualiza a tabela de roteamento e Verifica se teve mudança em sua tabela de roteamento'''
             sendNeighbor = self.update_table(data.routing_table)
+            
+            '''só envia a tabela de roteamento para seus vizinhos caso a sua sofreu alterações'''
             if sendNeighbor:
                 for neighbor in self.neighbors:
                     self.sender(self.neighbors[neighbor]["ip"], self.neighbors[neighbor]["port"])
@@ -39,14 +42,18 @@ class Roteador:
             for chave, valor in self.neighbors.items():
                 if valor['port'] != self.port:
                     datagrama = Datagrama(self.id, self.port, self.routing_table, valor['ip'], valor['port'])
-                    self.socket.sendto(datagrama.makeMessage(), (valor['ip'], valor['port']))
+                    self.canal.sendPackage(self.socket, datagrama, (valor['ip'], valor['port']))
 
+                    '''Mostra no console as mensagens enviadas para os vizinhos do roteador 1'''
                     if(int(self.id) == 1):
                         print(f"\033[92mEnviando mensagem {datagrama.toString()} para roteador ('{valor['ip']}', {valor['port']})\033[0m")
         else:
             if destinationPort != self.port:
                 datagrama = Datagrama(self.id, self.port, self.routing_table, destinationIp, destinationPort)
-                self.socket.sendto(datagrama.makeMessage(), (destinationIp, destinationPort))
+                
+                self.canal.sendPackage(self.socket, datagrama, (destinationIp, destinationPort))
+                
+                '''Mostra no console as mensagens enviadas para os vizinhos do roteador 1'''
                 if(int(self.id) == 1):
                     print(f"\033[92mEnviando mensagem {datagrama.toString()} para roteador {(destinationIp, destinationPort)}\033[0m")
 
@@ -61,7 +68,7 @@ class Roteador:
                 posicao = x
 
         # Atualiza a tabela de roteamento com base nas informações do vizinho
-        for i in range(num_routers + 1):  # Começa em 1 para ignorar a linha/coluna de identificação do roteador
+        for i in range(num_routers + 1):
             if neighbor_table[i][0] in self.neighborsList:
                 for j in range(1, num_routers + 1):
                     if neighbor_table[0][j] in self.neighborsList:
@@ -134,7 +141,6 @@ class Roteador:
     def init(self, adjacencyMatrix):
         self.addNeighborAndRoutingTable(adjacencyMatrix)
         self.printRoutingTable()
-        #self.printNeighbors()
     
     def run(self):
         thread = threading.Thread(target=self.receiver)
